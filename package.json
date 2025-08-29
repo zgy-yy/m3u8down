@@ -1,0 +1,23 @@
+{
+  "name": "m3u8down",
+  "version": "1.0.0",
+  "description": "m3u8 downloader",
+  "main": "dist/app.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "nodemon --exec ts-node src/app.ts"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.2"
+  }
+}

@@ -1,0 +1,13 @@
+# 依赖项
+node_modules/
+
+# 构建输出
+dist/
+build/
+
+# 环境变量
+.env
+
+# 日志文件
+logs/
+*.log

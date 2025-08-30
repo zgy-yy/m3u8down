@@ -72,23 +72,21 @@ app.get('/', (req, res) => {
 });
 
 // 健康检查
-app.get('/download', (req, res) => {
-   res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive'
-   })
-   const progress: Progress = {
-    data: {
-        name: '',
-        total: 0,
-        current: []
+app.get('/download', async (req, res) => {
+    const { url, name } = req.query;
+    
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+    });
+    
+    while(true){
+        res.write(`data: ${JSON.stringify(23)}\n\n`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
-   }
-   download('https://www.baidu.com', 'damon', progress)
-   res.write(JSON.stringify(progress))
-   res.end()
-   
+    
 });
 
 // 启动服务器

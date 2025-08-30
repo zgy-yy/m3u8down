@@ -1,67 +1,27 @@
 // src/app.ts
 
 import express from 'express';
-import { downTsSlice, getM3u8Data } from './down';
-import { removeFile, saveFile, saveTextFile } from './fileIo';
-import { exec } from 'child_process';
+import cors from 'cors';
 import logger from './logger';
+import {download} from "./index";
+import {Progress} from "./types";
+import {config} from "./config";
+import {screenMp4Files} from "./fileIo";
+
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port
 
 // 中间件
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-const basedir = "/Users/tal/Movies/vid";
-
-type Progress = {
-    data: {
-        name: string;
-        total: number;
-        current: number[];
-    }
-}
+app.use(express.urlencoded({extended: true}));
+app.use(cors());
 
 
+const mp4Files: string[] = screenMp4Files(config.basedir);
+logger.info("files", mp4Files);
 
-async function download(url: string, name: string, progress: Progress) {
-    progress.data.name = name;
-    const dir = `${basedir}/${name}`;
-    const baseUrl = 'https://sf1-cdn-tos.huoshanstatic.com/obj/media-fe/xgplayer_doc_video/hls/xgplayer-demo.m3u8'
-    const m3u8Res = await getM3u8Data(baseUrl)
-    const tsSlice = m3u8Res.split('\n').filter(line => line.includes('.ts'));
-    const sliceTask: Promise<void>[] = [];
-    const listFile = "list.txt";
-    let listContent = ""
-    tsSlice.forEach(async (slice: string, index: number) => {
-        progress.data.total = tsSlice.length;
-        const sliceUrl = new URL(slice, baseUrl).href;
-        const task = downTsSlice(sliceUrl.toString()).then(data => {
-            progress.data.current.push(index);
-            saveFile(data, `${dir}/${index}.ts`);
-        })
-        listContent += `file ${index}.ts\n`;
-        sliceTask.push(task);
-    })
-    saveTextFile(listContent, `${dir}/${listFile}`);
-    await Promise.all(sliceTask)
-    logger.info(name, '下载完成,开始合并...');
-    exec(`./lib/ffmpeg -f concat -safe 0 -i ${dir}/${listFile} -c copy ${dir}/${name}.mp4`, (error, stdout, stderr) => {
-        tsSlice.forEach(async (slice: string, index: number) => {
-            removeFile(`${dir}/${index}.ts`);
-        })
-        removeFile(`${dir}/${listFile}`);
-        if (error) {
-            logger.error(`执行错误: ${error}`);
-            return;
-        }
-        logger.info(name, '合并完成');
-    })
-}
-
-
-
+const progressMap: Map<string, Progress> = new Map();
 
 // 路由
 app.get('/', (req, res) => {
@@ -71,28 +31,81 @@ app.get('/', (req, res) => {
     });
 });
 
+
+
 // 健康检查
-app.get('/download', async (req, res) => {
-    const { url, name } = req.query;
-    
+app.post('/download', async (req, res) => {
+    console.log(req.body);
+    let {url, name,folder} = req.body;
+    if(!url || !name || !folder) {
+        res.json({
+            code: 1,
+            msg: "url or name or folder is empty"
+        })
+    }
+    if(mp4Files.find((item) => item === name+'.mp4')) {
+        res.json({
+            code: 1,
+            msg: "file exists"
+        })
+        return;
+    }
+    download(url, name,folder).then(res=>{
+        progressMap.set(name, res);
+    })
+    res.json({
+        code: 0,
+        msg: "success"
+    })
+});
+
+
+
+app.get("/list", (req, res) => {
     res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
+        'Content-Type': 'text/event-stream;charset=utf-8',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
     });
-    
-    while(true){
-        res.write(`data: ${JSON.stringify(23)}\n\n`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-});
+
+   const timer = setInterval(() => {
+        const result: {
+            downloaded: string[],
+            processList: {
+                name: string,
+                progress: Progress
+            }[]
+        } = {
+            downloaded: mp4Files,
+            processList: []
+        }
+        progressMap.forEach((item, key) => {
+            result.processList.push({
+                name: key,
+                progress: item
+            });
+
+            if(item.data.done){
+                mp4Files.push(key+'.mp4');
+                progressMap.delete(key);
+            }
+        })
+        res.write("data: "+JSON.stringify(result)+"\n\n");
+    }, 1000);
+    req.on("error", (err) => {
+        clearInterval(timer);
+    })
+    res.on("close", () => {
+        clearInterval(timer);
+    })
+})
 
 // 启动服务器
 app.listen(PORT, () => {
     logger.info(`🚀 服务器运行在 http://localhost:${PORT}`);
     logger.info(`💚 download: http://localhost:${PORT}/download`);
+    logger.info(`💚 process: http://localhost:${PORT}/list`);
 });
 
 export default app;

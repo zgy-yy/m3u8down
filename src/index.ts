@@ -21,7 +21,9 @@ export async function download(url: string, name: string, folder: string) {
     }
     const dir = `${basedir}/${folder}/${name}`;
     const baseUrl = url
-    const m3u8Res = await getM3u8Data(baseUrl)
+    const m3u8Res = await getM3u8Data(baseUrl).catch((err) => {
+        return ""
+    })
     if (!m3u8Res) {
         logger.error(name, 'm3u8文件为空');
         progress.data.done = true;

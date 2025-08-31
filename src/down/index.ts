@@ -1,28 +1,16 @@
 import logger from "../logger";
 import axios from "axios";
-import axiosRetry from "axios-retry";
+import {ProgressEvent} from "../types";
 
 
 const instance = axios.create({})
 
-axiosRetry(instance, {
-    retries: 10,
-    retryDelay: (retryCount) => {
-        return retryCount * 1000;
-    },
-    retryCondition: (error) => {
-        return axiosRetry.isNetworkError(error) ||
-            axiosRetry.isRetryableError(error) ||
-            (error.response && error.response.status >= 500);
-    }
-})
 
 instance.interceptors.request.use(
     config => {
         if (config.headers) {
             config.headers['User-Agent'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
         }
-
         return config;
     },
     error => {
@@ -31,20 +19,55 @@ instance.interceptors.request.use(
 )
 
 export async function getM3u8Data(url: string) {
-    const res = await instance.get<string>(url);
-    return res.data;
-}
-
-export async function downTsSlice(url: string, index: number) {
-    try{
-        const res = await instance.get<ArrayBuffer>(url, {
-            responseType: 'arraybuffer',
-        })
-        return res.data
-    }catch(error:any){
-        logger.error("切片下载失败", index,error?.response);
+    try {
+        const res = await instance.get<string>(url, {
+            timeout: 10000,
+        });
+        return res.data;
+    } catch (error: any) {
+        logger.error("获取m3u8文件失败", error.message);
         throw error;
     }
+}
+
+export async function downTsSlice(url: string, progress: ProgressEvent) {
+
+
+    async function download() {
+        const controller = new AbortController();
+        const signal = controller.signal;
+        const timer = setTimeout(() => {
+            controller.abort();
+        }, 1000 * 60*5)
+
+        try {
+            const res = await instance.get<ArrayBuffer>(url, {
+                responseType: 'arraybuffer',
+                //@ts-ignore
+                signal,
+                //@ts-ignore
+                onDownloadProgress: (progressEvent: ProgressEvent) => {
+                    progress.loaded = progressEvent.loaded;
+                    progress.total = progressEvent.total;
+                    progress.progress = progressEvent.progress;
+                    progress.rate = progressEvent.rate;
+                    progress.estimated = progressEvent.estimated;
+                    progress.event = progressEvent;
+                    progress.lengthComputable = progressEvent.lengthComputable;
+                    progress.download = progressEvent.download;
+                }
+            })
+            progress.success = true;
+            return res.data
+        } catch (error: any) {
+            logger.error("切片下载失败,重试", progress.index, error.message);
+            return download();
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    return await download();
 
 }
 

@@ -2,7 +2,7 @@ import {decodeMedia, downTsSlice, extraM3u8Info, getDecodeKey, getM3u8Data} from
 import {moveFile, removeDir, removeFile, saveFile, saveTextFile} from "./fileIo";
 import logger from "./logger";
 import {exec} from "child_process";
-import {Progress} from "./types";
+import {Progress, ProgressEvent} from "./types";
 import path from "path";
 import {config} from "./config";
 
@@ -15,7 +15,8 @@ export async function download(url: string, name: string, folder: string) {
             total: 0,
             current: [],
             done: false,
-            success: false
+            success: false,
+            itemSuccessNum: 0
         }
     }
     const dir = `${basedir}/${folder}/${name}`;
@@ -40,8 +41,13 @@ export async function download(url: string, name: string, folder: string) {
         const index: number = tsSlice.indexOf(slice);
         progress.data.total = tsSlice.length;
         const sliceUrl = new URL(slice, baseUrl).href;
-        const task = downTsSlice(sliceUrl, index).then(data => {
+        const _processEvent = new ProgressEvent(index)
+        progress.data.current.push(_processEvent);
+        const task = downTsSlice(sliceUrl, _processEvent).then(data => {
             if (data) {
+                _processEvent.success = true;
+                progress.data.itemSuccessNum++;
+
                 decodeMedia(data, key, index).then(data => {
                     saveFile(data, `${dir}/${index}.ts`);
                 }).catch(error => {
@@ -49,7 +55,6 @@ export async function download(url: string, name: string, folder: string) {
                     throw error;
                 })
             }
-            progress.data.current.push(index);
         }).catch(error => {
             logger.error("切片下载失败....", index);
         })
@@ -57,16 +62,15 @@ export async function download(url: string, name: string, folder: string) {
         sliceTask.push(task);
     }
     saveTextFile(listContent, listFile).then(data => {
-        logger.info(name, '列表文件创建完成');
+        logger.info(name, '切片列表文件创建完成');
     }).catch((err) => {
-        logger.error(name, '列表文件创建失败');
+        logger.error(name, '切片列表文件创建完成');
     })
     Promise.all(sliceTask).then(() => {
-        if(progress.data.current.length !== progress.data.total){
+        if (progress.data.itemSuccessNum !== progress.data.total) {
             logger.error(name, '切片数量不一致,下载失败');
             removeDir(dir);//删除目录
             progress.data.done = true;
-            progress.data.success = false;
             return;
         }
         logger.info(name, '下载完成,正在合并...');

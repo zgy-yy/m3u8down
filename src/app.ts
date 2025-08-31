@@ -31,26 +31,24 @@ app.get('/', (req, res) => {
     });
 });
 
-
-
 // 健康检查
 app.post('/download', async (req, res) => {
     console.log(req.body);
-    let {url, name,folder} = req.body;
-    if(!url || !name || !folder) {
+    let {url, name, folder} = req.body;
+    if (!url || !name || !folder) {
         res.json({
             code: 1,
             msg: "url or name or folder is empty"
         })
     }
-    if(mp4Files.find((item) => item === name+'.mp4')) {
+    if (mp4Files.find((item) => item === name + '.mp4')) {
         res.json({
             code: 1,
             msg: "file exists"
         })
         return;
     }
-    download(url, name,folder).then(res=>{
+    download(url, name, folder).then(res => {
         progressMap.set(name, res);
     })
     res.json({
@@ -58,7 +56,6 @@ app.post('/download', async (req, res) => {
         msg: "success"
     })
 });
-
 
 
 app.get("/list", (req, res) => {
@@ -69,29 +66,23 @@ app.get("/list", (req, res) => {
         'Access-Control-Allow-Origin': '*',
     });
 
-   const timer = setInterval(() => {
+    const timer = setInterval(() => {
         const result: {
             downloaded: string[],
-            processList: {
-                name: string,
-                progress: Progress
-            }[]
+            processList: Progress[]
         } = {
             downloaded: mp4Files,
             processList: []
         }
         progressMap.forEach((item, key) => {
-            result.processList.push({
-                name: key,
-                progress: item
-            });
+            result.processList.push(item);
 
-            if(item.data.done){
-                mp4Files.push(key+'.mp4');
+            if (item.data.done && item.data.success) {
+                mp4Files.push(key + '.mp4');
                 progressMap.delete(key);
             }
         })
-        res.write("data: "+JSON.stringify(result)+"\n\n");
+        res.write("data: " + JSON.stringify(result) + "\n\n");
     }, 1000);
     req.on("error", (err) => {
         clearInterval(timer);

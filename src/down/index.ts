@@ -1,39 +1,57 @@
+import logger from "../logger";
+import axios from "axios";
+import axiosRetry from "axios-retry";
 
+
+const instance = axios.create({})
+
+axiosRetry(instance, {
+    retries: 10,
+    retryDelay: (retryCount) => {
+        return retryCount * 1000;
+    },
+    retryCondition: (error) => {
+        return axiosRetry.isNetworkError(error) ||
+            axiosRetry.isRetryableError(error) ||
+            (error.response && error.response.status >= 500);
+    }
+})
+
+instance.interceptors.request.use(
+    config => {
+        if (config.headers) {
+            config.headers['User-Agent'] = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+        }
+
+        return config;
+    },
+    error => {
+        return Promise.reject(error);
+    }
+)
 
 export async function getM3u8Data(url: string) {
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'iPhone/16.6.1 (iPhone; iOS 16.6; Scale/3.00)'
-        }
-    });
-    if (!response.ok) {
-        console.log(url)
-        throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    return await response.text();
+    const res = await instance.get<string>(url);
+    return res.data;
 }
 
-export async function downTsSlice(url: string) {
-    const controller= new AbortController();
-    const signal = controller.signal;
-    const timer = setTimeout(()=>{
-        controller.abort();
-    },1000*30);
-    const response = await fetch(url,{
-        signal
-    }).finally(()=>{
-        clearTimeout(timer);
-    })
-    if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+export async function downTsSlice(url: string, index: number) {
+    try{
+        const res = await instance.get<ArrayBuffer>(url, {
+            responseType: 'arraybuffer',
+        })
+        return res.data
+    }catch(error:any){
+        logger.error("切片下载失败", index,error?.response);
+        throw error;
     }
-    return await response.arrayBuffer()
+
 }
 
-export  function extraM3u8Info(m3u8:string){
+export function extraM3u8Info(m3u8: string) {
     const lines = m3u8.split('\n');
     const info: {
-        key:string
+        key: string
         urls: string[]
     } = {
         key: "",
@@ -50,8 +68,8 @@ export  function extraM3u8Info(m3u8:string){
     return info
 }
 
-export async function getDecodeKey(baseUrl: string,uri: string) {
-    const url = new URL(uri,baseUrl).href;
+export async function getDecodeKey(baseUrl: string, uri: string) {
+    const url = new URL(uri, baseUrl).href;
     const response = await fetch(url, {
         headers: {
             'User-Agent': 'iPhone/16.6.1 (iPhone; iOS 16.6; Scale/3.00)'
@@ -61,7 +79,7 @@ export async function getDecodeKey(baseUrl: string,uri: string) {
 }
 
 
-function  makeIv(index: number) {
+function makeIv(index: number) {
     const iv = new Uint8Array(16);
     iv[12] = (index >> 24) & 0xff;
     iv[13] = (index >> 16) & 0xff;
@@ -69,11 +87,12 @@ function  makeIv(index: number) {
     iv[15] = index & 0xff;
     return iv;
 }
-export async function decodeMedia(data: ArrayBuffer, key: ArrayBuffer,index: number) {
+
+export async function decodeMedia(data: ArrayBuffer, key: ArrayBuffer, index: number) {
     const cryptoKey = await crypto.subtle.importKey(
         'raw',
         key,
-        { name: 'AES-CBC' },
+        {name: 'AES-CBC'},
         false,
         ['decrypt']
     );

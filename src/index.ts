@@ -14,13 +14,15 @@ export async function download(url: string, name: string, folder: string) {
             name: name,
             total: 0,
             current: [],
-            done: false
+            done: false,
+            success: false
         }
     }
     const dir = `${basedir}/${folder}/${name}`;
     const baseUrl = url
     const m3u8Res = await getM3u8Data(baseUrl)
     if (!m3u8Res) {
+        logger.error(name, 'm3u8文件为空');
         progress.data.done = true;
         return progress
     }
@@ -38,11 +40,18 @@ export async function download(url: string, name: string, folder: string) {
         const index: number = tsSlice.indexOf(slice);
         progress.data.total = tsSlice.length;
         const sliceUrl = new URL(slice, baseUrl).href;
-        const task = downTsSlice(sliceUrl).then(data => {
+        const task = downTsSlice(sliceUrl, index).then(data => {
+            if (data) {
+                decodeMedia(data, key, index).then(data => {
+                    saveFile(data, `${dir}/${index}.ts`);
+                }).catch(error => {
+                    logger.error("解密失败", index, error);
+                    throw error;
+                })
+            }
             progress.data.current.push(index);
-            decodeMedia(data, key, index).then(data => {
-                saveFile(data, `${dir}/${index}.ts`);
-            })
+        }).catch(error => {
+            logger.error("切片下载失败....", index);
         })
         listContent += `file ${index}.ts\n`;
         sliceTask.push(task);
@@ -53,15 +62,23 @@ export async function download(url: string, name: string, folder: string) {
         logger.error(name, '列表文件创建失败');
     })
     Promise.all(sliceTask).then(() => {
+        if(progress.data.current.length !== progress.data.total){
+            logger.error(name, '切片数量不一致,下载失败');
+            removeDir(dir);//删除目录
+            progress.data.done = true;
+            progress.data.success = false;
+            return;
+        }
         logger.info(name, '下载完成,正在合并...');
-        const cmd =`./lib/ffmpeg -f concat -safe 0 -i "${listFile}" -c copy "${mediaFile}"`
+        const cmd = `./lib/ffmpeg -f concat -safe 0 -i "${listFile}" -c copy "${mediaFile}"`
         exec(cmd, (error, stdout, stderr) => {
             moveFile(`${mediaFile}`, `${path.join(dir, '../')}/${name}.mp4`);
             removeDir(dir);//删除目录
             progress.data.done = true;
+            progress.data.success = true;
             if (error) {
                 logger.error(`执行错误: ${error}`);
-            }else{
+            } else {
                 logger.info(name, '合并完成');
             }
 
@@ -69,6 +86,8 @@ export async function download(url: string, name: string, folder: string) {
 
     }).catch((err) => {
         progress.data.done = true;
+        progress.data.success = false;
+        removeDir(dir);//删除目录
         logger.error(name, '下载失败', err);
     })
     return progress;

@@ -7,6 +7,7 @@ export type Progress = {
         total: number;
         current: number[];
         done: boolean;
+        success: boolean;
     }
 }
 

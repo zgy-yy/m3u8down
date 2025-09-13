@@ -1,6 +1,5 @@
 import logger from "../logger";
 import axios from "axios";
-import {ProgressEvent} from "../types";
 
 
 const instance = axios.create({})
@@ -30,7 +29,7 @@ export async function getM3u8Data(url: string) {
     }
 }
 
-export async function downTsSlice(url: string, progress: ProgressEvent) {
+export async function downTsSlice(url: string) {
 
 
     async function download() {
@@ -38,29 +37,17 @@ export async function downTsSlice(url: string, progress: ProgressEvent) {
         const signal = controller.signal;
         const timer = setTimeout(() => {
             controller.abort();
-        }, 1000 * 60*5)
+        }, 1000 * 60 * 1);//1分钟超时
 
         try {
             const res = await instance.get<ArrayBuffer>(url, {
                 responseType: 'arraybuffer',
                 //@ts-ignore
-                signal,
-                //@ts-ignore
-                onDownloadProgress: (progressEvent: ProgressEvent) => {
-                    progress.loaded = progressEvent.loaded;
-                    progress.total = progressEvent.total;
-                    progress.progress = progressEvent.progress;
-                    progress.rate = progressEvent.rate;
-                    progress.estimated = progressEvent.estimated;
-                    progress.event = progressEvent;
-                    progress.lengthComputable = progressEvent.lengthComputable;
-                    progress.download = progressEvent.download;
-                }
+                signal
             })
-            progress.success = true;
             return res.data
         } catch (error: any) {
-            logger.error("切片下载失败,重试", progress.index, error.message);
+            logger.error("切片下载失败,重试", url, error.message);
             return download();
         } finally {
             clearTimeout(timer);
@@ -115,7 +102,7 @@ export async function decodeMedia(data: ArrayBuffer, key: ArrayBuffer, index: nu
     const cryptoKey = await crypto.subtle.importKey(
         'raw',
         key,
-        {name: 'AES-CBC'},
+        { name: 'AES-CBC' },
         false,
         ['decrypt']
     );

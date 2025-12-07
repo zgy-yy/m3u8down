@@ -1,5 +1,6 @@
 import logger from "../logger";
 import axios from "axios";
+import { Progress } from "../types";
 
 
 const instance = axios.create({})
@@ -29,7 +30,7 @@ export async function getM3u8Data(url: string) {
     }
 }
 
-export async function downTsSlice(url: string) {
+export async function downTsSlice(url: string, onerror: () => void) {
 
 
     async function download() {
@@ -37,7 +38,7 @@ export async function downTsSlice(url: string) {
         const signal = controller.signal;
         const timer = setTimeout(() => {
             controller.abort();
-        }, 1000 * 60 * 1);//1分钟超时
+        }, 1000 * 60 * 2);//1分钟超时
 
         try {
             const res = await instance.get<ArrayBuffer>(url, {
@@ -48,6 +49,7 @@ export async function downTsSlice(url: string) {
             return res.data
         } catch (error: any) {
             logger.error("切片下载失败,重试", url, error.message);
+            onerror();
             return download();
         } finally {
             clearTimeout(timer);
@@ -82,9 +84,13 @@ export async function getDecodeKey(baseUrl: string, uri: string) {
     const url = new URL(uri, baseUrl).href;
     const response = await fetch(url, {
         headers: {
-            'User-Agent': 'iPhone/16.6.1 (iPhone; iOS 16.6; Scale/3.00)'
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'Referer': baseUrl
         }
     });
+    if (!response.ok) {
+        throw new Error(`获取Key失败: ${response.status} ${response.statusText}`);
+    }
     return await response.arrayBuffer()
 }
 
@@ -99,6 +105,11 @@ function makeIv(index: number) {
 }
 
 export async function decodeMedia(data: ArrayBuffer, key: ArrayBuffer, index: number) {
+    // 验证密钥长度
+    if (key.byteLength !== 16 && key.byteLength !== 24 && key.byteLength !== 32) {
+        throw new Error(`Invalid key length: ${key.byteLength} bytes. AES key must be 16, 24, or 32 bytes.`);
+    }
+
     const cryptoKey = await crypto.subtle.importKey(
         'raw',
         key,

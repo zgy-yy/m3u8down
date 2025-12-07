@@ -2,9 +2,10 @@
 
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import logger from './logger';
 import {download} from "./index";
-import {Progress} from "./types";
+import {Progress, Mp4FileInfo} from "./types";
 import {config} from "./config";
 import {screenMp4Files} from "./fileIo";
 
@@ -18,7 +19,7 @@ app.use(express.urlencoded({extended: true}));
 app.use(cors());
 
 
-const mp4Files: string[] = screenMp4Files(config.basedir);
+let  mp4Files: Mp4FileInfo[] = screenMp4Files(config.basedir);
 logger.info("files", mp4Files);
 
 const progressMap: Map<string, Progress> = new Map();
@@ -31,7 +32,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// 健康检查
+// 
 app.post('/download', async (req, res) => {
     console.log(req.body);
     let {url, name, folder} = req.body;
@@ -41,9 +42,16 @@ app.post('/download', async (req, res) => {
             msg: "url or name or folder is empty"
         })
     }
-    if (mp4Files.find((item) => item === name + '.mp4')) {
+    if(progressMap.has(name)) {
         res.json({
-            code: 1,
+            code: 2,
+            msg: "downloading"
+        })
+        return;
+    }
+    if(mp4Files.find((item) => item.name === name + '.mp4')) {
+        res.json({
+            code: 3,
             msg: "file exists"
         })
         return;
@@ -57,8 +65,13 @@ app.post('/download', async (req, res) => {
     })
 });
 
+app.get("/downloaded", (req, res) => {
+    mp4Files = screenMp4Files(config.basedir);
+    res.json(mp4Files)
+})
 
-app.get("/list", (req, res) => {
+
+app.get("/downloadProgress", (req, res) => {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream;charset=utf-8',
         'Cache-Control': 'no-cache',
@@ -68,17 +81,18 @@ app.get("/list", (req, res) => {
 
     const timer = setInterval(() => {
         const result: {
-            downloaded: string[],
-            processList: Progress[]
+            processList: Progress['data'][]
         } = {
-            downloaded: mp4Files,
             processList: []
         }
         progressMap.forEach((item, key) => {
-            result.processList.push(item);
-
-            if (item.data.done && item.data.success) {
-                mp4Files.push(key + '.mp4');
+            result.processList.push(item.data);
+            if (item.data.done || item.data.success) {
+                mp4Files.push({
+                    name: key + '.mp4',
+                    createdAt: new Date(),
+                    parentDir: item.data.folder // 当前文件的上一级目录
+                });
                 progressMap.delete(key);
             }
         })

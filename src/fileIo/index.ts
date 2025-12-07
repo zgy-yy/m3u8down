@@ -38,10 +38,17 @@ export function checkDir(filename: string) {
     }
 }
 
-export function screenMp4Files(dirPath: string,): string[] {
-    const results: string[] = [];
+import { Mp4FileInfo } from '../types';
+
+const dir =["/movie/vid/",'/jp']
+
+function scanDir(dirPath: string ,dir:string): Mp4FileInfo[] {
+    const results: Mp4FileInfo[] = [];
 
     try {
+        if (!fs.existsSync(dirPath)) {
+            return results;
+        }
         const items = fs.readdirSync(dirPath);
 
         for (const item of items) {
@@ -50,16 +57,29 @@ export function screenMp4Files(dirPath: string,): string[] {
 
             if (stat.isDirectory()) {
                 // 如果是目录，递归搜索
-                results.push(...screenMp4Files(fullPath));
+                results.push(...scanDir(fullPath,dir));
             } else if (path.extname(item).toLowerCase() === '.mp4') {
                 // 如果是MP4文件，添加到结果中
-                results.push(item);
+                results.push({
+                    name: item,
+                    createdAt: stat.birthtime,
+                    parentDir: dir // 当前文件的上一级目录
+                });
             }
         }
     } catch (error) {
         console.error(`读取目录时出错: ${dirPath}`, error);
     }
 
+    return results;
+}
+
+export function screenMp4Files(dirPath: string,): Mp4FileInfo[] {
+    const results: Mp4FileInfo[] = [];
+    for (const item of dir) {
+        const fullPath = path.join(dirPath, item);
+        results.push(...scanDir(fullPath,item));
+    }
     return results;
 }
 
